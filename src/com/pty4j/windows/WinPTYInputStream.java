@@ -12,68 +12,68 @@ import java.io.IOException;
 import java.io.InputStream;
 
 public class WinPTYInputStream extends InputStream {
-  private final NamedPipe myNamedPipe;
-  private boolean myClosed;
+    private final NamedPipe myNamedPipe;
+    private boolean myClosed;
 
-  public WinPTYInputStream(NamedPipe namedPipe) {
-    myNamedPipe = namedPipe;
-  }
-
-  /**
-   * Implementation of read for the InputStream.
-   *
-   * @throws java.io.IOException on error.
-   */
-  @Override
-  public int read() throws IOException {
-    byte b[] = new byte[1];
-    if (1 != read(b, 0, 1)) {
-      return -1;
-    }
-    return b[0];
-  }
-
-  @Override
-  public int read(byte[] buf, int off, int len) throws IOException {
-    if (myClosed) {
-      return 0;
+    public WinPTYInputStream(NamedPipe namedPipe) {
+        myNamedPipe = namedPipe;
     }
 
-    if (buf == null) {
-      throw new NullPointerException();
+    /**
+     * Implementation of read for the InputStream.
+     *
+     * @throws java.io.IOException on error.
+     */
+    @Override
+    public int read() throws IOException {
+        byte b[] = new byte[1];
+        if (1 != read(b, 0, 1)) {
+            return -1;
+        }
+        return b[0];
     }
-    if ((off < 0) || (off > buf.length) || (len < 0) || ((off + len) > buf.length) || ((off + len) < 0)) {
-      throw new IndexOutOfBoundsException();
+
+    @Override
+    public int read(byte[] buf, int off, int len) throws IOException {
+        if (myClosed) {
+            return 0;
+        }
+
+        if (buf == null) {
+            throw new NullPointerException();
+        }
+        if ((off < 0) || (off > buf.length) || (len < 0) || ((off + len) > buf.length) || ((off + len) < 0)) {
+            throw new IndexOutOfBoundsException();
+        }
+        if (len == 0) {
+            return 0;
+        }
+        byte[] tmpBuf = new byte[len];
+
+        len = myNamedPipe.read(tmpBuf, len);
+
+        if (len <= 0) {
+            return -1;
+        }
+        System.arraycopy(tmpBuf, 0, buf, off, len);
+
+        return len;
     }
-    if (len == 0) {
-      return 0;
+
+    @Override
+    public void close() throws IOException {
+        myClosed = true;
+        myNamedPipe.markClosed();
     }
-    byte[] tmpBuf = new byte[len];
 
-    len = myNamedPipe.read(tmpBuf, len);
-
-    if (len <= 0) {
-      return -1;
+    @Override
+    public int available() throws IOException {
+        return myNamedPipe.available();
     }
-    System.arraycopy(tmpBuf, 0, buf, off, len);
 
-    return len;
-  }
-
-  @Override
-  public void close() throws IOException {
-    myClosed = true;
-    myNamedPipe.markClosed();
-  }
-
-  @Override
-  public int available() throws IOException {
-    return myNamedPipe.available();
-  }
-
-  @Override
-  protected void finalize() throws Throwable {
-    close();
-    super.finalize();
-  }
+    @Override
+    protected void finalize() throws Throwable {
+        close();
+        super.finalize();
+    }
 }

@@ -32,50 +32,50 @@ import java.util.Map;
  * @author traff
  */
 public abstract class PtyProcess extends Process {
-  public abstract boolean isRunning();
+    public abstract boolean isRunning();
 
-  public abstract void setWinSize(WinSize winSize);
+    public abstract void setWinSize(WinSize winSize);
 
-  public abstract WinSize getWinSize() throws IOException;
+    public abstract WinSize getWinSize() throws IOException;
 
-  public static PtyProcess exec(String[] command) throws IOException {
-    return exec(command, (Map<String, String>)null);
-  }
-
-  public static PtyProcess exec(String[] command, Map<String, String> environment) throws IOException {
-    return exec(command, environment, null, false, false, null);
-  }
-
-  public static PtyProcess exec(String[] command, Map<String, String> environment, String workingDirectory) throws IOException {
-    return exec(command, environment, workingDirectory, false, false, null);
-  }
-
-  @Deprecated
-  public static PtyProcess exec(String[] command, String[] environment) throws IOException {
-    return exec(command, environment, null, false);
-  }
-
-  @Deprecated
-  public static PtyProcess exec(String[] command, String[] environment, String workingDirectory, boolean console) throws IOException {
-    if (Platform.isWindows()) {
-      return new WinPtyProcess(command, environment, workingDirectory, console);
+    public static PtyProcess exec(String[] command) throws IOException {
+        return exec(command, (Map<String, String>) null);
     }
-    return new UnixPtyProcess(command, environment, workingDirectory, new Pty(console), console ? new Pty() : null);
-  }
 
-  public static PtyProcess exec(String[] command, Map<String, String> environment, String workingDirectory, boolean console)
-    throws IOException {
-    return exec(command, environment, workingDirectory, console, false, null);
-  }
-
-  public static PtyProcess exec(String[] command, Map<String, String> environment, String workingDirectory, boolean console, boolean cygwin,
-                                File logFile) throws IOException {
-    if (Platform.isWindows()) {
-      if (cygwin) {
-        return new CygwinPtyProcess(command, environment, workingDirectory, logFile, console);
-      }
-      return new WinPtyProcess(command, Advapi32Util.getEnvironmentBlock(environment), workingDirectory, console);
+    public static PtyProcess exec(String[] command, Map<String, String> environment) throws IOException {
+        return exec(command, environment, null, false, false, null);
     }
-    return new UnixPtyProcess(command, PtyUtil.toStringArray(environment), workingDirectory, new Pty(console), console ? new Pty() : null);
-  }
+
+    public static PtyProcess exec(String[] command, Map<String, String> environment, String workingDirectory) throws IOException {
+        return exec(command, environment, workingDirectory, false, false, null);
+    }
+
+    @Deprecated
+    public static PtyProcess exec(String[] command, String[] environment) throws IOException {
+        return exec(command, environment, null, false);
+    }
+
+    @Deprecated
+    public static PtyProcess exec(String[] command, String[] environment, String workingDirectory, boolean console) throws IOException {
+        if (Platform.isWindows()) {
+            return new WinPtyProcess(command, environment, workingDirectory, console);
+        }
+        return new UnixPtyProcess(command, environment, workingDirectory, new Pty(console), console ? new Pty() : null);
+    }
+
+    public static PtyProcess exec(String[] command, Map<String, String> environment, String workingDirectory, boolean console)
+            throws IOException {
+        return exec(command, environment, workingDirectory, console, false, null);
+    }
+
+    public static PtyProcess exec(String[] command, Map<String, String> environment, String workingDirectory, boolean console, boolean cygwin,
+                                  File logFile) throws IOException {
+        if (Platform.isWindows()) {
+            if (cygwin) {
+                return new CygwinPtyProcess(command, environment, workingDirectory, logFile, console);
+            }
+            return new WinPtyProcess(command, Advapi32Util.getEnvironmentBlock(environment), workingDirectory, console);
+        }
+        return new UnixPtyProcess(command, PtyUtil.toStringArray(environment), workingDirectory, new Pty(console), console ? new Pty() : null);
+    }
 }

@@ -17,192 +17,191 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static com.pty4j.windows.WinPty.KERNEL32;
 
 public class CygwinPtyProcess extends PtyProcess {
-  private static final int CONNECT_PIPE_TIMEOUT = 1000;
+    private static final int CONNECT_PIPE_TIMEOUT = 1000;
 
-  private static final int PIPE_ACCESS_INBOUND = 1;
-  private static final int PIPE_ACCESS_OUTBOUND = 2;
+    private static final int PIPE_ACCESS_INBOUND = 1;
+    private static final int PIPE_ACCESS_OUTBOUND = 2;
 
-  private static final AtomicInteger processCounter = new AtomicInteger();
+    private static final AtomicInteger processCounter = new AtomicInteger();
 
-  private final Process myProcess;
-  private final NamedPipe myInputPipe;
-  private final NamedPipe myOutputPipe;
-  private final NamedPipe myErrorPipe;
-  private final WinNT.HANDLE myInputHandle;
-  private final WinNT.HANDLE myOutputHandle;
-  private final WinNT.HANDLE myErrorHandle;
+    private final Process myProcess;
+    private final NamedPipe myInputPipe;
+    private final NamedPipe myOutputPipe;
+    private final NamedPipe myErrorPipe;
+    private final WinNT.HANDLE myInputHandle;
+    private final WinNT.HANDLE myOutputHandle;
+    private final WinNT.HANDLE myErrorHandle;
 
-  public CygwinPtyProcess(String[] command, Map<String, String> environment, String workingDirectory, File logFile, boolean console)
-    throws IOException {
-    String pipePrefix = String.format("\\\\.\\pipe\\cygwinpty-%d-%d-", KERNEL32.GetCurrentProcessId(), processCounter.getAndIncrement());
-    String inPipeName = pipePrefix + "in";
-    String outPipeName = pipePrefix + "out";
-    String errPipeName = pipePrefix + "err";
+    public CygwinPtyProcess(String[] command, Map<String, String> environment, String workingDirectory, File logFile, boolean console)
+            throws IOException {
+        String pipePrefix = String.format("\\\\.\\pipe\\cygwinpty-%d-%d-", KERNEL32.GetCurrentProcessId(), processCounter.getAndIncrement());
+        String inPipeName = pipePrefix + "in";
+        String outPipeName = pipePrefix + "out";
+        String errPipeName = pipePrefix + "err";
 
-    myInputHandle = KERNEL32.CreateNamedPipeA(inPipeName, PIPE_ACCESS_OUTBOUND | WinNT.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, null);
-    myOutputHandle = KERNEL32.CreateNamedPipeA(outPipeName, PIPE_ACCESS_INBOUND | WinNT.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, null);
-    myErrorHandle =
-      console ? KERNEL32.CreateNamedPipeA(errPipeName, PIPE_ACCESS_INBOUND | WinNT.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, null) : null;
+        myInputHandle = KERNEL32.CreateNamedPipeA(inPipeName, PIPE_ACCESS_OUTBOUND | WinNT.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, null);
+        myOutputHandle = KERNEL32.CreateNamedPipeA(outPipeName, PIPE_ACCESS_INBOUND | WinNT.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, null);
+        myErrorHandle =
+                console ? KERNEL32.CreateNamedPipeA(errPipeName, PIPE_ACCESS_INBOUND | WinNT.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, null) : null;
 
-    if (myInputHandle == WinBase.INVALID_HANDLE_VALUE ||
-        myOutputHandle == WinBase.INVALID_HANDLE_VALUE ||
-        myErrorHandle == WinBase.INVALID_HANDLE_VALUE) {
-      closeHandles();
-      throw new IOException("Unable to create a named pipe");
-    }
-
-    myInputPipe = new NamedPipe(myInputHandle);
-    myOutputPipe = new NamedPipe(myOutputHandle);
-    myErrorPipe = myErrorHandle != null ? new NamedPipe(myErrorHandle) : null;
-
-    myProcess = startProcess(inPipeName, outPipeName, errPipeName, workingDirectory, command, environment, logFile, console);
-  }
-
-  private Process startProcess(String inPipeName,
-                               String outPipeName,
-                               String errPipeName,
-                               String workingDirectory,
-                               String[] command,
-                               Map<String, String> environment,
-                               File logFile,
-                               boolean console) throws IOException {
-    File nativeFile;
-    try {
-      nativeFile = PtyUtil.resolveNativeFile("cyglaunch.exe");
-    } catch (Exception e) {
-      throw new IOException(e);
-    }
-    String logPath = logFile == null ? "null" : logFile.getAbsolutePath();
-    ProcessBuilder processBuilder =
-      new ProcessBuilder(nativeFile.getAbsolutePath(), logPath, console ? "1" : "0", inPipeName, outPipeName, errPipeName);
-    for (String s : command) {
-      processBuilder.command().add(s);
-    }
-    processBuilder.directory(new File(workingDirectory));
-    processBuilder.environment().clear();
-    processBuilder.environment().putAll(environment);
-    final Process process = processBuilder.start();
-
-    try {
-      waitForPipe(myInputHandle);
-      waitForPipe(myOutputHandle);
-      if (myErrorHandle != null) waitForPipe(myErrorHandle);
-    } catch (IOException e) {
-      process.destroy();
-      closeHandles();
-      throw e;
-    }
-
-    new Thread() {
-      @Override
-      public void run() {
-        while (true) {
-          try {
-            process.waitFor();
-            break;
-          }
-          catch (InterruptedException ignore) { }
+        if (myInputHandle == WinBase.INVALID_HANDLE_VALUE ||
+                myOutputHandle == WinBase.INVALID_HANDLE_VALUE ||
+                myErrorHandle == WinBase.INVALID_HANDLE_VALUE) {
+            closeHandles();
+            throw new IOException("Unable to create a named pipe");
         }
 
-        closeHandles();
-      }
-    }.start();
+        myInputPipe = new NamedPipe(myInputHandle);
+        myOutputPipe = new NamedPipe(myOutputHandle);
+        myErrorPipe = myErrorHandle != null ? new NamedPipe(myErrorHandle) : null;
 
-    return process;
-  }
-
-  private static void waitForPipe(WinNT.HANDLE handle) throws IOException {
-    WinNT.HANDLE connectEvent = KERNEL32.CreateEventA(null, true, false, null);
-
-    WinBase.OVERLAPPED povl = new WinBase.OVERLAPPED();
-    povl.hEvent = connectEvent;
-
-    boolean success = KERNEL32.ConnectNamedPipe(handle, povl);
-    if (!success) {
-      switch (KERNEL32.GetLastError()) {
-        case WinError.ERROR_PIPE_CONNECTED:
-          success = true;
-          break;
-        case WinError.ERROR_IO_PENDING:
-          if (KERNEL32.WaitForSingleObject(connectEvent, CONNECT_PIPE_TIMEOUT) != WinBase.WAIT_OBJECT_0) {
-            KERNEL32.CancelIo(handle);
-
-            success = false;
-          }
-          else {
-            success = true;
-          }
-
-          break;
-      }
+        myProcess = startProcess(inPipeName, outPipeName, errPipeName, workingDirectory, command, environment, logFile, console);
     }
 
-    KERNEL32.CloseHandle(connectEvent);
-
-    if (!success) throw new IOException("Cannot connect to a named pipe");
-  }
-
-  @Override
-  public boolean isRunning() {
-    try {
-      myProcess.exitValue();
-      return false;
-    } catch(IllegalThreadStateException e) {
-      return true;
-    }
-  }
-
-  @Override
-  public void setWinSize(WinSize winSize) {
-    throw new RuntimeException("Not implemented");
-  }
-
-  @Override
-  public WinSize getWinSize() throws IOException {
-    throw new RuntimeException("Not implemented");
-  }
-
-  @Override
-  public OutputStream getOutputStream() {
-    return new WinPTYOutputStream(myInputPipe);
-  }
-
-  @Override
-  public InputStream getInputStream() {
-    return new WinPTYInputStream(myOutputPipe);
-  }
-
-  @Override
-  public InputStream getErrorStream() {
-    if (myErrorPipe == null) {
-      return new InputStream() {
-        @Override
-        public int read() throws IOException {
-          return -1;
+    private Process startProcess(String inPipeName,
+                                 String outPipeName,
+                                 String errPipeName,
+                                 String workingDirectory,
+                                 String[] command,
+                                 Map<String, String> environment,
+                                 File logFile,
+                                 boolean console) throws IOException {
+        File nativeFile;
+        try {
+            nativeFile = PtyUtil.resolveNativeFile("cyglaunch.exe");
+        } catch (Exception e) {
+            throw new IOException(e);
         }
-      };
+        String logPath = logFile == null ? "null" : logFile.getAbsolutePath();
+        ProcessBuilder processBuilder =
+                new ProcessBuilder(nativeFile.getAbsolutePath(), logPath, console ? "1" : "0", inPipeName, outPipeName, errPipeName);
+        for (String s : command) {
+            processBuilder.command().add(s);
+        }
+        processBuilder.directory(new File(workingDirectory));
+        processBuilder.environment().clear();
+        processBuilder.environment().putAll(environment);
+        final Process process = processBuilder.start();
+
+        try {
+            waitForPipe(myInputHandle);
+            waitForPipe(myOutputHandle);
+            if (myErrorHandle != null) waitForPipe(myErrorHandle);
+        } catch (IOException e) {
+            process.destroy();
+            closeHandles();
+            throw e;
+        }
+
+        new Thread() {
+            @Override
+            public void run() {
+                while (true) {
+                    try {
+                        process.waitFor();
+                        break;
+                    } catch (InterruptedException ignore) {
+                    }
+                }
+
+                closeHandles();
+            }
+        }.start();
+
+        return process;
     }
-    return new WinPTYInputStream(myErrorPipe);
-  }
 
-  @Override
-  public int waitFor() throws InterruptedException {
-    return myProcess.waitFor();
-  }
+    private static void waitForPipe(WinNT.HANDLE handle) throws IOException {
+        WinNT.HANDLE connectEvent = KERNEL32.CreateEventA(null, true, false, null);
 
-  @Override
-  public int exitValue() {
-    return myProcess.exitValue();
-  }
+        WinBase.OVERLAPPED povl = new WinBase.OVERLAPPED();
+        povl.hEvent = connectEvent;
 
-  @Override
-  public void destroy() {
-    myProcess.destroy();
-  }
+        boolean success = KERNEL32.ConnectNamedPipe(handle, povl);
+        if (!success) {
+            switch (KERNEL32.GetLastError()) {
+                case WinError.ERROR_PIPE_CONNECTED:
+                    success = true;
+                    break;
+                case WinError.ERROR_IO_PENDING:
+                    if (KERNEL32.WaitForSingleObject(connectEvent, CONNECT_PIPE_TIMEOUT) != WinBase.WAIT_OBJECT_0) {
+                        KERNEL32.CancelIo(handle);
 
-  private void closeHandles() {
-    KERNEL32.CloseHandle(myInputHandle);
-    KERNEL32.CloseHandle(myOutputHandle);
-    if (myErrorHandle != null) KERNEL32.CloseHandle(myErrorHandle);
-  }
+                        success = false;
+                    } else {
+                        success = true;
+                    }
+
+                    break;
+            }
+        }
+
+        KERNEL32.CloseHandle(connectEvent);
+
+        if (!success) throw new IOException("Cannot connect to a named pipe");
+    }
+
+    @Override
+    public boolean isRunning() {
+        try {
+            myProcess.exitValue();
+            return false;
+        } catch (IllegalThreadStateException e) {
+            return true;
+        }
+    }
+
+    @Override
+    public void setWinSize(WinSize winSize) {
+        throw new RuntimeException("Not implemented");
+    }
+
+    @Override
+    public WinSize getWinSize() throws IOException {
+        throw new RuntimeException("Not implemented");
+    }
+
+    @Override
+    public OutputStream getOutputStream() {
+        return new WinPTYOutputStream(myInputPipe);
+    }
+
+    @Override
+    public InputStream getInputStream() {
+        return new WinPTYInputStream(myOutputPipe);
+    }
+
+    @Override
+    public InputStream getErrorStream() {
+        if (myErrorPipe == null) {
+            return new InputStream() {
+                @Override
+                public int read() throws IOException {
+                    return -1;
+                }
+            };
+        }
+        return new WinPTYInputStream(myErrorPipe);
+    }
+
+    @Override
+    public int waitFor() throws InterruptedException {
+        return myProcess.waitFor();
+    }
+
+    @Override
+    public int exitValue() {
+        return myProcess.exitValue();
+    }
+
+    @Override
+    public void destroy() {
+        myProcess.destroy();
+    }
+
+    private void closeHandles() {
+        KERNEL32.CloseHandle(myInputHandle);
+        KERNEL32.CloseHandle(myOutputHandle);
+        if (myErrorHandle != null) KERNEL32.CloseHandle(myErrorHandle);
+    }
 }
